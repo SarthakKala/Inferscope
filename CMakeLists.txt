@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(onnx-bench CXX)
+project(inferscope CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -29,24 +29,24 @@ set(SOURCES
     src/reporter.cpp
 )
 
-add_executable(onnx-bench ${SOURCES})
+add_executable(inferscope ${SOURCES})
 
-target_include_directories(onnx-bench PRIVATE
+target_include_directories(inferscope PRIVATE
     "${ORT_ROOT}/include"
     "${CMAKE_SOURCE_DIR}/src"
 )
 
-target_link_libraries(onnx-bench PRIVATE
+target_link_libraries(inferscope PRIVATE
     ${ORT_LIB}
 )
 
 # Copy the .so file next to the binary so it can be found at runtime
-add_custom_command(TARGET onnx-bench POST_BUILD
+add_custom_command(TARGET inferscope POST_BUILD
     COMMAND ${CMAKE_COMMAND} -E copy_if_different
         "${ORT_ROOT}/lib/libonnxruntime.so.1.18.0"
-        $<TARGET_FILE_DIR:onnx-bench>/libonnxruntime.so.1.18.0
+        $<TARGET_FILE_DIR:inferscope>/libonnxruntime.so.1.18.0
     COMMAND ${CMAKE_COMMAND} -E create_symlink
         libonnxruntime.so.1.18.0
-        $<TARGET_FILE_DIR:onnx-bench>/libonnxruntime.so
+        $<TARGET_FILE_DIR:inferscope>/libonnxruntime.so
     COMMENT "Copying ONNX Runtime shared library to build directory"
 )

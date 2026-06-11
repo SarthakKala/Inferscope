@@ -2,5 +2,3 @@ build/
 third_party/
 models/*.onnx
 *.json
-onnx-bench
-onnx-bench-spec.md

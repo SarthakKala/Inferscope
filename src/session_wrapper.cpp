@@ -3,7 +3,7 @@
 #include <iostream>
 
 SessionWrapper::SessionWrapper(const std::string& model_path)
-    : env_(ORT_LOGGING_LEVEL_WARNING, "onnx-bench"),
+    : env_(ORT_LOGGING_LEVEL_WARNING, "inferscope"),
       session_(nullptr)
 {
     // Configure session

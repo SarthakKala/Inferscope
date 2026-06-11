@@ -17,11 +17,11 @@ std::string shape_to_json(const std::vector<int64_t>& shape) {
 
 void print_summary(const BenchmarkResult& result, const GraphInfo& graph) {
     std::cout << "\n========================================\n";
-    std::cout << "  onnx-bench Results\n";
+    std::cout << "  inferscope Results\n";
     std::cout << "========================================\n";
     std::cout << "Model      : " << result.model_path    << "\n";
     std::cout << "Warmup runs: " << result.config.warmup_runs  << "\n";
-    std::cout << "Measure runs:" << result.config.measure_runs << "\n";
+    std::cout << "Measure runs: " << result.config.measure_runs << "\n";
 
     std::cout << "\n--- Graph ---\n";
     for (const auto& inp : graph.inputs) {
