@@ -1,211 +1,85 @@
 # inferscope
 
-A command-line profiler for ONNX models: load any `.onnx` file, run inference across configurable warmup and measurement rounds, and get statistically rigorous latency numbers — p50, p90, p99, stddev, throughput — written to stdout and a JSON file. No GPU required. CPU execution provider only.
+inferscope is a command-line tool that benchmarks how fast an ONNX model runs on your CPU. Point it at any `.onnx` file, and it runs inference hundreds of times, throws away the warmup runs, and gives you real latency stats — p50, p90, p99, stddev, throughput — printed to the terminal and saved as JSON. No GPU, no Python, no cloud. Just C++ and ONNX Runtime.
 
----
+## 🛠️ Technologies
 
-## Architecture
+* C++17
+* CMake 3.16+
+* ONNX Runtime 1.18.0 (CPU only)
+* `std::chrono` for per-run timing
+* Hand-built JSON output (no external libraries)
+
+## ✨ Features
+
+* Load any `.onnx` model from disk and run CPU inference immediately
+* Warmup phase discards the first N slow runs so your numbers are stable
+* Measures p50, p90, p99, mean, stddev, min, max, and throughput (inferences/sec)
+* Prints input/output names, shapes, and tensor types from the loaded graph
+* Writes machine-readable results to a JSON file for scripts and dashboards
+* Works with dynamic input shapes — batch size is auto-filled to 1
+* Uses random dummy inputs so you're measuring speed, not prediction accuracy
+
+## 📊 Why Percentiles, Not Just an Average
+
+Most tutorials time one inference call and call it a day. That number lies. The first few runs are always slower (memory allocation, kernel warmup), and a single spike can drag the average up while your typical frame time stays fine. inferscope discards warmup runs, times every inference individually, and reports percentiles so you can see typical latency (p50) and worst-case frame budget (p99) — the numbers that actually matter when you're asking "can this chip run this model in real time?"
+
+## 🔧 Process
+
+The tool loads your model once through ONNX Runtime and keeps the session alive. It inspects the graph to figure out input shapes and types, generates random float tensors to match, then runs inference in two loops — warmup (untimed) and measurement (timed with `high_resolution_clock`). Each timed run feeds into a profiler that sorts the latency vector and computes percentiles. Finally, a reporter prints a human-readable summary and writes the full result to JSON.
 
 ```
-CLI (--model · --warmup · --runs · --output)
-               │
-               ▼
-       SessionWrapper
-   Ort::Env + Ort::Session
-    loads model from disk,
-    owns session lifecycle
-               │
-       ┌───────┴────────┐
-       ▼                ▼
- GraphInspector    BenchmarkRunner
- input/output      warmup loop (discarded)
- names · shapes    measurement loop
- tensor types            │
-                         ▼
-                      Profiler
-                 p50 · p90 · p99
-                 mean · stddev · min · max
-                         │
-                         ▼
-                      Reporter
-                 ┌──────┴──────┐
-                 ▼             ▼
-           stdout           results.json
-          summary         machine-readable
+CLI → SessionWrapper → GraphInspector + BenchmarkRunner → Profiler → Reporter → stdout + results.json
 ```
 
----
+## 📚 What I Learned
 
-## Tech stack
+* **ONNX Runtime C++ API** — loading models, creating tensor views, running sessions, and reading graph metadata without Python
+* **Why warmup runs exist** — the first N inferences are not representative; benchmarking without discarding them gives inflated numbers
+* **Percentile statistics for latency** — p50 vs p99 tells a completely different story than a single average
+* **CMake with prebuilt shared libraries** — linking against `libonnxruntime.so` and copying it next to the binary for runtime loading
+* **Dynamic ONNX shapes** — models with `-1` batch dimensions need explicit resolution before allocating input tensors
 
-| Layer | Technology | Role |
-|-------|------------|------|
-| Language | C++17 | Entire codebase |
-| Build system | CMake 3.16+ | Compilation and linking |
-| ML runtime | ONNX Runtime 1.18.0 | Model loading, session management, inference |
-| Execution provider | CPU (default) | No GPU dependency |
-| Timing | `std::chrono::high_resolution_clock` | Sub-millisecond per-run measurement |
-| Output | Manual JSON via `std::ostringstream` | No external serialization library |
+## 🌱 Overall Growth
 
----
+This project sits at the intersection of systems programming and ML infrastructure — the layer where a model file on disk becomes a number you can trust on a specific piece of hardware. Building it meant going past "run inference once in a notebook" and into the territory of how production teams actually validate whether a model meets a latency budget.
 
-## Prerequisites
+## 🚀 Running the Project
 
-- Linux (Ubuntu 20.04+)
-- GCC 9+ or Clang 10+
-- CMake 3.16+
-- `wget`, `tar` (for ONNX Runtime download)
+**Prerequisites:** Linux (Ubuntu 20.04+), GCC 9+ or Clang 10+, CMake 3.16+
 
 ```bash
 sudo apt update && sudo apt install -y build-essential cmake wget tar git
 ```
 
----
-
-## Setup
-
-1. **Clone**
-
-    ```bash
-    git clone https://github.com/SarthakKala/inferscope
-    cd inferscope
-    ```
-
-2. **Download ONNX Runtime** (CPU build, no CUDA needed)
-
-    ```bash
-    mkdir -p third_party
-    wget https://github.com/microsoft/onnxruntime/releases/download/v1.18.0/onnxruntime-linux-x64-1.18.0.tgz \
-      -O third_party/onnxruntime.tgz
-    tar -xzf third_party/onnxruntime.tgz -C third_party/
-    mv third_party/onnxruntime-linux-x64-1.18.0 third_party/onnxruntime
-    rm third_party/onnxruntime.tgz
-    ```
-
-    After extraction, confirm the C++ header location (layout varies by ORT version):
-
-    ```bash
-    find third_party/onnxruntime/include -name onnxruntime_cxx_api.h
-    ```
-
-    For v1.18.0 Linux x64 the file is at `include/onnxruntime_cxx_api.h`, which matches the default `CMakeLists.txt` include path (`${ORT_ROOT}/include`). If your `find` result is nested (e.g. `include/onnxruntime/core/session/onnxruntime_cxx_api.h`), update `target_include_directories` accordingly.
-
-3. **Download a model**
-
-    ```bash
-    chmod +x models/download_model.sh && ./models/download_model.sh
-    ```
-
-    Downloads MobileNetV2-12 from the ONNX Model Zoo into `models/mobilenetv2.onnx`.
-
-4. **Build**
-
-    ```bash
-    mkdir -p build && cd build
-    cmake ..
-    make -j$(nproc)
-    ```
-
----
-
-## Run
-
 ```bash
-cd build
+git clone https://github.com/SarthakKala/inferscope
+cd inferscope
+
+# Download ONNX Runtime (CPU, no CUDA)
+mkdir -p third_party
+wget https://github.com/microsoft/onnxruntime/releases/download/v1.18.0/onnxruntime-linux-x64-1.18.0.tgz \
+  -O third_party/onnxruntime.tgz
+tar -xzf third_party/onnxruntime.tgz -C third_party/
+mv third_party/onnxruntime-linux-x64-1.18.0 third_party/onnxruntime
+rm third_party/onnxruntime.tgz
+
+# Download a test model (MobileNetV2)
+chmod +x models/download_model.sh && ./models/download_model.sh
+
+# Build
+mkdir -p build && cd build
+cmake ..
+make -j$(nproc)
+
+# Run
 ./inferscope --model ../models/mobilenetv2.onnx --warmup 20 --runs 200 --output results.json
 ```
-
-### CLI flags
 
 | Flag | Default | Description |
 |------|---------|-------------|
 | `--model` | required | Path to `.onnx` model file |
-| `--warmup` | `20` | Inference runs discarded before measurement starts |
-| `--runs` | `200` | Inference runs used for latency statistics |
-| `--output` | `results.json` | Path to write JSON results |
+| `--warmup` | `20` | Untimed runs before measurement |
+| `--runs` | `200` | Timed runs for statistics |
+| `--output` | `results.json` | JSON output path |
 | `--help` | — | Print usage |
-
----
-
-## Output
-
-**stdout** (representative; latency varies by machine)
-
-```
-========================================
-  inferscope Results
-========================================
-Model      : ../models/mobilenetv2.onnx
-Warmup runs: 20
-Measure runs: 200
-
---- Graph ---
-  Input  : input   shape=[-1, 3, 224, 224]   type=float32
-  Output : output  shape=[-1, 1000]           type=float32
-
---- Latency (ms) ---
-  p50    : 19.580 ms
-  p90    : 22.786 ms
-  p99    : 24.732 ms
-  mean   : 20.138 ms
-  stddev : 1.674 ms
-  min    : 17.878 ms
-  max    : 25.054 ms
-
---- Throughput ---
-  49.7 inferences/sec
-========================================
-```
-
-**results.json**
-
-```json
-{
-  "model": "../models/mobilenetv2.onnx",
-  "warmup_runs": 20,
-  "measure_runs": 200,
-  "graph": {
-    "inputs":  [{ "name": "input",  "shape": [-1, 3, 224, 224], "type": "float32" }],
-    "outputs": [{ "name": "output", "shape": [-1, 1000],         "type": "float32" }]
-  },
-  "latency_ms": {
-    "p50": 19.5801, "p90": 22.7859, "p99": 24.7315,
-    "mean": 20.1384, "stddev": 1.6735, "min": 17.8779, "max": 25.0540
-  },
-  "throughput_fps": 49.7
-}
-```
-
-> Latency numbers are machine-dependent. The example above is from a Docker Ubuntu 22.04 build on a typical laptop CPU, single-threaded (`SetIntraOpNumThreads(1)`), with `ORT_ENABLE_EXTENDED` graph optimization. On a modern CPU, MobileNetV2 p50 is often in the 10–80 ms range.
-
-> Graph metadata reports shapes as ONNX defines them. `-1` is a dynamic batch dimension; the benchmark replaces non-positive dimensions with `1` when allocating input tensors, so inference runs at batch size 1 even when the graph section shows `-1`.
-
----
-
-## Design notes
-
-> Reporting a single average is how tutorials measure inference. It is not how you validate hardware. A single spike can double the mean while the p50 stays flat — that distinction matters when you are deciding whether a chip is fast enough for a real-time workload. Warmup runs are discarded because the first N inferences are slower due to memory allocation and kernel JIT; including them inflates the reported latency. The p99 tells you your worst-case frame budget.
-
-> The tool accepts any `.onnx` model — not just MobileNetV2. Dynamic input dimensions are detected at load time and replaced with batch size 1. Inputs are filled with random floats; the goal is timing accuracy, not meaningful predictions.
-
----
-
-## Project layout
-
-| Path | Contents |
-|------|----------|
-| `src/main.cpp` | CLI argument parsing, wires all components |
-| `src/session_wrapper` | `Ort::Env` + `Ort::Session` lifecycle, exposes `run_inference()` |
-| `src/graph_inspector` | Reads input/output names, shapes, and types from a loaded session |
-| `src/benchmark_runner` | Warmup loop, measurement loop, calls profiler |
-| `src/profiler` | Sorts latency vector, computes p50/p90/p99/stddev |
-| `src/reporter` | Formats results as human text and JSON, writes to file |
-| `models/download_model.sh` | Downloads MobileNetV2-12 from ONNX Model Zoo |
-| `third_party/onnxruntime/` | Extracted ORT headers and `.so` (not tracked in git) |
-| `CMakeLists.txt` | Build config, links against `libonnxruntime.so` |
-
----
-
-## License
-
-MIT
